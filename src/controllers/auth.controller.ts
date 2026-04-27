@@ -1,16 +1,27 @@
 import bcrypt from "bcryptjs";
-import { OAuth2Client } from "google-auth-library";
+import { OAuth2Client, type TokenPayload } from "google-auth-library";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import { Request, Response } from "express";
 import { User } from "../models/user.model";
 import { AppError } from "../utils/AppError";
 import { generateCode } from "../utils/code";
+import { createNumericOtp, signOtpValue, verifyOtpValue } from "../utils/otp";
 import { createToken } from "../utils/token";
 import { env } from "../config/env";
 import { addTokenToBlacklist, deleteKey, getCode, saveCode } from "../services/redis.service";
 import { sendEmail } from "../services/email.service";
 
-const googleClient = new OAuth2Client(env.googleClientId);
+const googleClient = new OAuth2Client();
+const RESET_PASSWORD_SCOPE = "reset-password";
+
+type ResetPasswordChallenge = {
+  issuedAt: number;
+  signature: string;
+};
+
+type LegacyResetPasswordChallenge = {
+  legacyCode: string;
+};
 
 const cleanEmail = (email: string) => {
   return email.toLowerCase().trim();
@@ -24,6 +35,149 @@ const sendCode = async (email: string, key: string, subject: string) => {
   const code = generateCode();
   await saveCode(key, code);
   await sendEmail(email, subject, `<h2>Your code is ${code}</h2>`);
+};
+
+const buildResetPasswordKey = (email: string) => {
+  return `reset:${email}`;
+};
+
+const readResetChallenge = (value: string | null) => {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as Partial<ResetPasswordChallenge>;
+
+    if (typeof parsed.issuedAt !== "number" || typeof parsed.signature !== "string") {
+      return {
+        legacyCode: value
+      };
+    }
+
+    return {
+      issuedAt: parsed.issuedAt,
+      signature: parsed.signature
+    };
+  } catch {
+    return {
+      legacyCode: value
+    };
+  }
+};
+
+const resolveResetOtp = (body: Request["body"]) => {
+  if (typeof body?.otp === "string" && body.otp.trim()) {
+    return body.otp.trim();
+  }
+
+  if (typeof body?.code === "string" && body.code.trim()) {
+    return body.code.trim();
+  }
+
+  return "";
+};
+
+const sendResetPasswordOtp = async (email: string) => {
+  const otp = createNumericOtp();
+  const challenge: ResetPasswordChallenge = {issuedAt: Date.now(),
+    signature: signOtpValue(RESET_PASSWORD_SCOPE, email, otp)
+  };
+  const ttlMinutes = Math.max(1, Math.ceil(env.resetCodeSeconds / 60));
+
+  await saveCode(
+    buildResetPasswordKey(email),
+    JSON.stringify(challenge),
+    env.resetCodeSeconds
+  );
+
+  await sendEmail(email,"Reset password",
+    [
+      "<h2>Password reset request</h2>",
+      "<p>Use the following verification code to continue:</p>",
+      `<h1>${otp}</h1>`,
+      `<p>This code expires in ${ttlMinutes} minute${ttlMinutes === 1 ? "" : "s"}.</p>`
+    ].join("")
+  );
+};
+
+const getGoogleDisplayName = (payload: TokenPayload) => {
+  const parts = [payload.given_name, payload.family_name].filter(
+    (value): value is string => Boolean(value && value.trim())
+  );
+
+  if (parts.length) {
+    return parts.join(" ");
+  }
+
+  if (payload.name?.trim()) {
+    return payload.name.trim();
+  }
+
+  return payload.email?.split("@")[0] || "User";
+};
+
+const getGoogleTokenFromBody = (body: Request["body"]) => {
+  if (typeof body?.idToken === "string" && body.idToken.trim()) {
+    return body.idToken.trim();
+  }
+
+  if (typeof body?.credential === "string" && body.credential.trim()) {
+    return body.credential.trim();
+  }
+
+  return "";
+};
+
+const findOrCreateGoogleUser = async (payload: TokenPayload) => {
+  if (!payload.sub) {
+    throw new AppError("Google account id is missing", 400);
+  }
+
+  if (!payload.email || !payload.email_verified) {
+    throw new AppError("Google email is not verified", 400);
+  }
+
+  const email = cleanEmail(payload.email);
+  let user = await User.findOne({ googleId: payload.sub });
+
+  if (!user) {
+    user = await User.findOne({ email });
+  }
+
+  if (!user) {
+    user = await User.create({
+      name: getGoogleDisplayName(payload),
+      email,
+      googleId: payload.sub,
+      provider: "google",
+      isConfirmed: true
+    });
+
+    return user;
+  }
+
+  if (user.googleId && user.googleId !== payload.sub) {
+    throw new AppError("This email is already linked to another Google account", 409);
+  }
+
+  let shouldSave = false;
+
+  if (!user.googleId) {
+    user.googleId = payload.sub;
+    shouldSave = true;
+  }
+
+  if (!user.isConfirmed) {
+    user.isConfirmed = true;
+    shouldSave = true;
+  }
+
+  if (shouldSave) {
+    await user.save();
+  }
+
+  return user;
 };
 
 export const signup = async (req: Request, res: Response) => {
@@ -61,6 +215,8 @@ export const signup = async (req: Request, res: Response) => {
     message: "Signup done, check your email"
   });
 };
+
+
 
 export const confirmEmail = async (req: Request, res: Response) => {
   const { email, code } = req.body;
@@ -131,7 +287,7 @@ export const login = async (req: Request, res: Response) => {
 };
 
 export const googleLogin = async (req: Request, res: Response) => {
-  const { idToken } = req.body;
+  const idToken = getGoogleTokenFromBody(req.body);
 
   if (!env.googleClientId) {
     throw new AppError("Google client id is missing", 500);
@@ -148,26 +304,11 @@ export const googleLogin = async (req: Request, res: Response) => {
 
   const payload = ticket.getPayload();
 
-  if (!payload?.email || !payload.email_verified) {
-    throw new AppError("Google email is not verified", 400);
+  if (!payload) {
+    throw new AppError("Unable to verify Google account", 400);
   }
 
-  const email = cleanEmail(payload.email);
-  let user = await User.findOne({ email });
-
-  if (!user) {
-    user = await User.create({
-      name: payload.name || email.split("@")[0],
-      email,
-      provider: "google",
-      isConfirmed: true
-    });
-  }
-
-  if (!user.isConfirmed) {
-    user.isConfirmed = true;
-    await user.save();
-  }
+  const user = await findOrCreateGoogleUser(payload);
 
   const token = createToken(user._id.toString());
 
@@ -188,7 +329,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
   const user = await User.findOne({ email: userEmail });
 
   if (user) {
-    await sendCode(userEmail, `reset:${userEmail}`, "Reset password");
+    await sendResetPasswordOtp(userEmail);
   }
 
   res.json({
@@ -198,10 +339,11 @@ export const forgotPassword = async (req: Request, res: Response) => {
 };
 
 export const resetPassword = async (req: Request, res: Response) => {
-  const { email, code, password } = req.body;
+  const { email, password } = req.body;
+  const otp = resolveResetOtp(req.body);
 
-  if (!email || !code || !password) {
-    throw new AppError("Email, code and password are required", 400);
+  if (!email || !otp || !password) {
+    throw new AppError("Email, otp and password are required", 400);
   }
 
   if (password.length < 6) {
@@ -209,10 +351,19 @@ export const resetPassword = async (req: Request, res: Response) => {
   }
 
   const userEmail = cleanEmail(email);
-  const savedCode = await getCode(`reset:${userEmail}`);
+  const resetKey = buildResetPasswordKey(userEmail);
+  const challenge = readResetChallenge(await getCode(resetKey));
 
-  if (!savedCode || savedCode !== code) {
-    throw new AppError("Invalid code", 400);
+  if (!challenge) {
+    throw new AppError("Reset code is invalid or expired", 400);
+  }
+
+  const isOtpValid = "legacyCode" in challenge
+    ? challenge.legacyCode === otp
+    : verifyOtpValue(challenge.signature, RESET_PASSWORD_SCOPE, userEmail, otp);
+
+  if (!isOtpValid) {
+    throw new AppError("Reset code is invalid or expired", 400);
   }
 
   const user = await User.findOne({ email: userEmail });
@@ -226,7 +377,7 @@ export const resetPassword = async (req: Request, res: Response) => {
   user.isConfirmed = true;
   user.passwordChangedAt = new Date(Date.now() - 1000);
   await user.save();
-  await deleteKey(`reset:${userEmail}`);
+  await deleteKey(resetKey);
 
   res.json({
     success: true,

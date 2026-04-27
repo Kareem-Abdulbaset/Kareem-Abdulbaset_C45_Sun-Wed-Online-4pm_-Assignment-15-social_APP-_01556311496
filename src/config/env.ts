@@ -9,6 +9,8 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET || "secret",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
   jwtBlacklistSeconds: Number(process.env.JWT_BLACKLIST_SECONDS) || 604800,
+  otpSecret: process.env.OTP_SECRET || process.env.JWT_SECRET || "secret",
+  resetCodeSeconds: Number(process.env.RESET_CODE_SECONDS) || 3600,
   bcryptSalt: Number(process.env.BCRYPT_SALT) || 8,
   clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
   email: {

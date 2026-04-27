@@ -7,6 +7,7 @@ export interface UserDocument extends Document {
   _id: Types.ObjectId;
   name: string;
   email: string;
+  googleId?: string;
   password?: string;
   role: UserRole;
   provider: UserProvider;
@@ -30,6 +31,11 @@ const userSchema = new Schema<UserDocument>(
       unique: true,
       lowercase: true,
       trim: true
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true
     },
     password: {
       type: String,
