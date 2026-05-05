@@ -139,10 +139,10 @@ const findOrCreateGoogleUser = async (payload: TokenPayload) => {
   }
 
   const email = cleanEmail(payload.email);
-  let user = await User.findOne({ googleId: payload.sub });
+  let user = await User.findOne({ googleId: payload.sub, deletedAt: null });
 
   if (!user) {
-    user = await User.findOne({ email });
+    user = await User.findOne({ email, deletedAt: null });
   }
 
   if (!user) {
@@ -226,7 +226,7 @@ export const confirmEmail = async (req: Request, res: Response) => {
   }
 
   const userEmail = cleanEmail(email);
-  const user = await User.findOne({ email: userEmail });
+  const user = await User.findOne({ email: userEmail, deletedAt: null });
 
   if (!user) {
     throw new AppError("User not found", 404);
@@ -262,7 +262,7 @@ export const login = async (req: Request, res: Response) => {
     throw new AppError("Email and password are required", 400);
   }
 
-  const user = await User.findOne({ email: cleanEmail(email) }).select("+password");
+  const user = await User.findOne({ email: cleanEmail(email), deletedAt: null }).select("+password");
 
   if (!user || !user.password) {
     throw new AppError("Invalid email or password", 401);
@@ -326,7 +326,7 @@ export const forgotPassword = async (req: Request, res: Response) => {
   }
 
   const userEmail = cleanEmail(email);
-  const user = await User.findOne({ email: userEmail });
+  const user = await User.findOne({ email: userEmail, deletedAt: null });
 
   if (user) {
     await sendResetPasswordOtp(userEmail);
@@ -366,7 +366,7 @@ export const resetPassword = async (req: Request, res: Response) => {
     throw new AppError("Reset code is invalid or expired", 400);
   }
 
-  const user = await User.findOne({ email: userEmail });
+  const user = await User.findOne({ email: userEmail, deletedAt: null });
 
   if (!user) {
     throw new AppError("User not found", 404);
@@ -396,7 +396,7 @@ export const updatePassword = async (req: Request, res: Response) => {
     throw new AppError("Password must be at least 6 characters", 400);
   }
 
-  const user = await User.findById(req.user?._id).select("+password");
+  const user = await User.findOne({ _id: req.user?._id, deletedAt: null }).select("+password");
 
   if (!user) {
     throw new AppError("User not found", 404);

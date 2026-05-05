@@ -1,7 +1,11 @@
 import { Request, Response } from "express";
 import { Types } from "mongoose";
-import { Post } from "../models/post.model";
+import { Comment } from "../models/comment.model";
+import { Post, PostDocument } from "../models/post.model";
+import { User } from "../models/user.model";
 import { AppError } from "../utils/AppError";
+import { getPagination } from "../utils/pagination";
+import { readReactionType } from "../utils/reaction";
 import { createPostSchema, updatePostSchema } from "../validations/post.validation";
 
 const checkId = (id: string) => {
@@ -10,15 +14,39 @@ const checkId = (id: string) => {
   }
 };
 
-const checkPostOwner = (postUserId: Types.ObjectId, requestUserId: Types.ObjectId, role: string) => {
+const checkPostOwner = (post: PostDocument, requestUserId: Types.ObjectId, role: string) => {
   if (role === "admin") {
     return;
   }
 
-  if (postUserId.toString() !== requestUserId.toString()) {
+  if (post.user.toString() !== requestUserId.toString()) {
     throw new AppError("You are not allowed", 403);
   }
 };
+
+const getPostById = async (id: string, includeDeleted = false) => {
+  checkId(id);
+
+  const query = includeDeleted ? { _id: id } : { _id: id, deletedAt: null };
+  const post = await Post.findOne(query);
+
+  if (!post) {
+    throw new AppError("Post not found", 404);
+  }
+
+  return post;
+};
+
+const postPopulate = [
+  {
+    path: "user",
+    select: "name email avatar coverImage bio"
+  },
+  {
+    path: "reactions.user",
+    select: "name email avatar"
+  }
+];
 
 export const createPost = async (req: Request, res: Response) => {
   if (!req.user) {
@@ -33,7 +61,7 @@ export const createPost = async (req: Request, res: Response) => {
     images: data.images
   });
 
-  await post.populate("user", "name email");
+  await post.populate(postPopulate);
 
   res.status(201).json({
     success: true,
@@ -43,25 +71,78 @@ export const createPost = async (req: Request, res: Response) => {
 };
 
 export const getAllPosts = async (req: Request, res: Response) => {
-  const posts = await Post.find().populate("user", "name email").sort({ createdAt: -1 });
+  const { page, limit, skip } = getPagination(req.query);
+  const includeDeleted = req.user?.role === "admin" && req.query.includeDeleted === "true";
+  const filter = includeDeleted ? {} : { deletedAt: null };
+
+  const [posts, total] = await Promise.all([
+    Post.find(filter).populate(postPopulate).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Post.countDocuments(filter)
+  ]);
 
   res.json({
     success: true,
+    page,
+    limit,
+    total,
+    posts
+  });
+};
+
+export const getNewsFeed = async (req: Request, res: Response) => {
+  const { page, limit, skip } = getPagination(req.query);
+  const filter = { deletedAt: null };
+
+  const [posts, total] = await Promise.all([
+    Post.find(filter).populate(postPopulate).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Post.countDocuments(filter)
+  ]);
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    posts
+  });
+};
+
+export const getProfilePosts = async (req: Request, res: Response) => {
+  checkId(req.params.userId);
+
+  const { page, limit, skip } = getPagination(req.query);
+  const user = await User.findOne({ _id: req.params.userId, deletedAt: null });
+
+  if (!user) {
+    throw new AppError("User not found", 404);
+  }
+
+  const filter = { user: user._id, deletedAt: null };
+  const [posts, total] = await Promise.all([
+    Post.find(filter).populate(postPopulate).sort({ createdAt: -1 }).skip(skip).limit(limit),
+    Post.countDocuments(filter)
+  ]);
+
+  res.json({
+    success: true,
+    page,
+    limit,
+    total,
+    user,
     posts
   });
 };
 
 export const getPost = async (req: Request, res: Response) => {
-  checkId(req.params.id);
+  const includeDeleted = req.user?.role === "admin";
+  const post = await getPostById(req.params.id, includeDeleted);
+  const commentsCount = await Comment.countDocuments({ post: post._id, deletedAt: null });
 
-  const post = await Post.findById(req.params.id).populate("user", "name email");
-
-  if (!post) {
-    throw new AppError("Post not found", 404);
-  }
+  await post.populate(postPopulate);
 
   res.json({
     success: true,
+    commentsCount,
     post
   });
 };
@@ -71,15 +152,13 @@ export const updatePost = async (req: Request, res: Response) => {
     throw new AppError("User not found", 401);
   }
 
-  checkId(req.params.id);
+  const post = await getPostById(req.params.id, true);
 
-  const post = await Post.findById(req.params.id);
-
-  if (!post) {
-    throw new AppError("Post not found", 404);
+  if (post.deletedAt) {
+    throw new AppError("Post is deleted", 400);
   }
 
-  checkPostOwner(post.user, req.user._id, req.user.role);
+  checkPostOwner(post, req.user._id, req.user.role);
 
   const data = updatePostSchema(req.body);
 
@@ -92,7 +171,7 @@ export const updatePost = async (req: Request, res: Response) => {
   }
 
   await post.save();
-  await post.populate("user", "name email");
+  await post.populate(postPopulate);
 
   res.json({
     success: true,
@@ -101,25 +180,109 @@ export const updatePost = async (req: Request, res: Response) => {
   });
 };
 
-export const deletePost = async (req: Request, res: Response) => {
+export const softDeletePost = async (req: Request, res: Response) => {
   if (!req.user) {
     throw new AppError("User not found", 401);
   }
 
-  checkId(req.params.id);
+  const post = await getPostById(req.params.id, true);
 
-  const post = await Post.findById(req.params.id);
+  checkPostOwner(post, req.user._id, req.user.role);
 
-  if (!post) {
-    throw new AppError("Post not found", 404);
+  if (!post.deletedAt) {
+    post.deletedAt = new Date();
+    await post.save();
   }
-
-  checkPostOwner(post.user, req.user._id, req.user.role);
-
-  await post.deleteOne();
 
   res.json({
     success: true,
     message: "Post deleted"
+  });
+};
+
+export const restorePost = async (req: Request, res: Response) => {
+  if (!req.user) {
+    throw new AppError("User not found", 401);
+  }
+
+  const post = await getPostById(req.params.id, true);
+  const deletedAt = post.deletedAt;
+
+  checkPostOwner(post, req.user._id, req.user.role);
+
+  post.deletedAt = null;
+  await post.save();
+
+  if (deletedAt) {
+    await Comment.updateMany({ post: post._id, deletedAt }, { deletedAt: null });
+  }
+
+  await post.populate(postPopulate);
+
+  res.json({
+    success: true,
+    message: "Post restored",
+    post
+  });
+};
+
+export const hardDeletePost = async (req: Request, res: Response) => {
+  if (!req.user) {
+    throw new AppError("User not found", 401);
+  }
+
+  const post = await getPostById(req.params.id, true);
+
+  checkPostOwner(post, req.user._id, req.user.role);
+  await post.deleteOne();
+
+  res.json({
+    success: true,
+    message: "Post hard deleted"
+  });
+};
+
+export const setPostReaction = async (req: Request, res: Response) => {
+  if (!req.user) {
+    throw new AppError("User not found", 401);
+  }
+
+  const post = await getPostById(req.params.id);
+  const type = readReactionType(req.body?.type);
+  const reaction = post.reactions.find((item) => item.user.toString() === req.user?._id.toString());
+
+  if (reaction) {
+    reaction.type = type;
+  } else {
+    post.reactions.push({
+      user: req.user._id,
+      type,
+      createdAt: new Date()
+    });
+  }
+
+  await post.save();
+
+  res.json({
+    success: true,
+    message: "Reaction saved",
+    reactions: post.reactions
+  });
+};
+
+export const removePostReaction = async (req: Request, res: Response) => {
+  if (!req.user) {
+    throw new AppError("User not found", 401);
+  }
+
+  const post = await getPostById(req.params.id);
+
+  post.reactions = post.reactions.filter((item) => item.user.toString() !== req.user?._id.toString());
+  await post.save();
+
+  res.json({
+    success: true,
+    message: "Reaction removed",
+    reactions: post.reactions
   });
 };

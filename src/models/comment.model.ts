@@ -1,24 +1,24 @@
 import { Document, Schema, Types, model } from "mongoose";
 import { ReactionType, reactionTypes } from "../utils/reaction";
 
-export interface PostReaction {
+export interface CommentReaction {
   user: Types.ObjectId;
   type: ReactionType;
   createdAt: Date;
 }
 
-export interface PostDocument extends Document {
+export interface CommentDocument extends Document {
   _id: Types.ObjectId;
+  post: Types.ObjectId;
   user: Types.ObjectId;
   content: string;
-  images: string[];
-  reactions: PostReaction[];
+  reactions: CommentReaction[];
   deletedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
-const reactionSchema = new Schema<PostReaction>(
+const reactionSchema = new Schema<CommentReaction>(
   {
     user: {
       type: Schema.Types.ObjectId,
@@ -40,8 +40,13 @@ const reactionSchema = new Schema<PostReaction>(
   }
 );
 
-const postSchema = new Schema<PostDocument>(
+const commentSchema = new Schema<CommentDocument>(
   {
+    post: {
+      type: Schema.Types.ObjectId,
+      ref: "Post",
+      required: true
+    },
     user: {
       type: Schema.Types.ObjectId,
       ref: "User",
@@ -52,11 +57,7 @@ const postSchema = new Schema<PostDocument>(
       required: true,
       trim: true,
       minlength: 1,
-      maxlength: 2000
-    },
-    images: {
-      type: [String],
-      default: []
+      maxlength: 1000
     },
     reactions: {
       type: [reactionSchema],
@@ -72,23 +73,7 @@ const postSchema = new Schema<PostDocument>(
   }
 );
 
-postSchema.index({ deletedAt: 1, createdAt: -1 });
-postSchema.index({ user: 1, deletedAt: 1, createdAt: -1 });
+commentSchema.index({ post: 1, deletedAt: 1, createdAt: -1 });
+commentSchema.index({ user: 1, deletedAt: 1, createdAt: -1 });
 
-postSchema.pre("save", async function () {
-  if (!this.isModified("deletedAt") || !this.deletedAt) {
-    return;
-  }
-
-  const { Comment } = await import("./comment.model");
-
-  await Comment.updateMany({ post: this._id, deletedAt: null }, { deletedAt: this.deletedAt });
-});
-
-postSchema.pre("deleteOne", { document: true, query: false }, async function () {
-  const { Comment } = await import("./comment.model");
-
-  await Comment.deleteMany({ post: this._id });
-});
-
-export const Post = model<PostDocument>("Post", postSchema);
+export const Comment = model<CommentDocument>("Comment", commentSchema);

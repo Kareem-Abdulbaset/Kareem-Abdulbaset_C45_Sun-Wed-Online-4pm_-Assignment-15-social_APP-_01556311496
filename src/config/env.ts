@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const env = {
+  nodeEnv: process.env.NODE_ENV || "development",
   port: Number(process.env.PORT) || 3000,
   mongoUrl: process.env.MONGO_URL || "mongodb://127.0.0.1:27017/social_media_app",
   redisUrl: process.env.REDIS_URL || "redis://127.0.0.1:6379",
@@ -13,6 +14,7 @@ export const env = {
   resetCodeSeconds: Number(process.env.RESET_CODE_SECONDS) || 3600,
   bcryptSalt: Number(process.env.BCRYPT_SALT) || 8,
   clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
+  corsOrigin: process.env.CORS_ORIGIN || process.env.CLIENT_URL || "*",
   email: {
     host: process.env.EMAIL_HOST || "smtp.gmail.com",
     port: Number(process.env.EMAIL_PORT) || 587,
