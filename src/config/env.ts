@@ -21,5 +21,10 @@ export const env = {
     pass: process.env.EMAIL_PASS || "",
     from: process.env.EMAIL_FROM || "Social App <no-reply@socialapp.com>"
   },
-  googleClientId: process.env.GOOGLE_CLIENT_ID || ""
+  googleClientId: process.env.GOOGLE_CLIENT_ID || "",
+  firebase: {
+    projectId: process.env.FIREBASE_PROJECT_ID || "",
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL || "",
+    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n") || ""
+  }
 };

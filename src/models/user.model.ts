@@ -12,6 +12,7 @@ export interface UserDocument extends Document {
   role: UserRole;
   provider: UserProvider;
   isConfirmed: boolean;
+  fcmTokens: string[];
   passwordChangedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +55,10 @@ const userSchema = new Schema<UserDocument>(
     isConfirmed: {
       type: Boolean,
       default: false
+    },
+    fcmTokens: {
+      type: [String],
+      default: []
     },
     passwordChangedAt: Date
   },
