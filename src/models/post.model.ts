@@ -68,12 +68,20 @@ const postSchema = new Schema<PostDocument>(
     }
   },
   {
-    timestamps: true
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
   }
 );
 
 postSchema.index({ deletedAt: 1, createdAt: -1 });
 postSchema.index({ user: 1, deletedAt: 1, createdAt: -1 });
+
+postSchema.virtual("comments", {
+  ref: "Comment",
+  localField: "_id",
+  foreignField: "commentOn"
+});
 
 postSchema.pre("save", async function () {
   if (!this.isModified("deletedAt") || !this.deletedAt) {
@@ -82,13 +90,13 @@ postSchema.pre("save", async function () {
 
   const { Comment } = await import("./comment.model");
 
-  await Comment.updateMany({ post: this._id, deletedAt: null }, { deletedAt: this.deletedAt });
+  await Comment.updateMany({ postId: this._id, deletedAt: null }, { deletedAt: this.deletedAt });
 });
 
 postSchema.pre("deleteOne", { document: true, query: false }, async function () {
   const { Comment } = await import("./comment.model");
 
-  await Comment.deleteMany({ post: this._id });
+  await Comment.deleteMany({ postId: this._id });
 });
 
 export const Post = model<PostDocument>("Post", postSchema);

@@ -28,5 +28,7 @@ router.patch("/:id/restore", asyncHandler(authentication), asyncHandler(restoreP
 router.delete("/:id/hard", asyncHandler(authentication), asyncHandler(hardDeletePost));
 router.put("/:id/reactions", asyncHandler(authentication), asyncHandler(setPostReaction));
 router.delete("/:id/reactions", asyncHandler(authentication), asyncHandler(removePostReaction));
+router.put("/:id/likes", asyncHandler(authentication), asyncHandler(setPostReaction));
+router.delete("/:id/likes", asyncHandler(authentication), asyncHandler(removePostReaction));
 
 export default router;

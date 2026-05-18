@@ -110,7 +110,7 @@ userSchema.pre("save", async function () {
   await Comment.updateMany(
     {
       deletedAt: null,
-      $or: [{ user: this._id }, { post: { $in: postIds } }]
+      $or: [{ createdBy: this._id }, { postId: { $in: postIds } }]
     },
     { deletedAt: this.deletedAt }
   );
@@ -134,7 +134,7 @@ userSchema.pre("deleteOne", { document: true, query: false }, async function () 
   const postIds = posts.map((post) => post._id);
 
   await Comment.deleteMany({
-    $or: [{ user: this._id }, { post: { $in: postIds } }]
+    $or: [{ createdBy: this._id }, { postId: { $in: postIds } }]
   });
   await Post.deleteMany({ user: this._id });
   await Story.deleteMany({ user: this._id });

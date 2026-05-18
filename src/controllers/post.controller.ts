@@ -48,6 +48,38 @@ const postPopulate = [
   }
 ];
 
+const commentUserSelect = "name email avatar";
+
+const postCommentReplyPopulate = [
+  {
+    path: "createdBy",
+    select: commentUserSelect
+  },
+  {
+    path: "likes",
+    select: commentUserSelect
+  },
+  {
+    path: "tags",
+    select: commentUserSelect
+  }
+];
+
+const postCommentsPopulate = {
+  path: "comments",
+  match: { deletedAt: null, commentOnModel: "Post" },
+  options: { sort: { createdAt: -1 } },
+  populate: [
+    ...postCommentReplyPopulate,
+    {
+      path: "replies",
+      match: { deletedAt: null, commentOnModel: "Comment" },
+      options: { sort: { createdAt: -1 } },
+      populate: postCommentReplyPopulate
+    }
+  ]
+};
+
 export const createPost = async (req: Request, res: Response) => {
   if (!req.user) {
     throw new AppError("User not found", 401);
@@ -136,13 +168,19 @@ export const getProfilePosts = async (req: Request, res: Response) => {
 export const getPost = async (req: Request, res: Response) => {
   const includeDeleted = req.user?.role === "admin";
   const post = await getPostById(req.params.id, includeDeleted);
-  const commentsCount = await Comment.countDocuments({ post: post._id, deletedAt: null });
+  const commentsCount = await Comment.countDocuments({ postId: post._id, deletedAt: null });
+  const repliesCount = await Comment.countDocuments({
+    postId: post._id,
+    commentOnModel: "Comment",
+    deletedAt: null
+  });
 
-  await post.populate(postPopulate);
+  await post.populate([...postPopulate, postCommentsPopulate]);
 
   res.json({
     success: true,
     commentsCount,
+    repliesCount,
     post
   });
 };
@@ -214,7 +252,7 @@ export const restorePost = async (req: Request, res: Response) => {
   await post.save();
 
   if (deletedAt) {
-    await Comment.updateMany({ post: post._id, deletedAt }, { deletedAt: null });
+    await Comment.updateMany({ postId: post._id, deletedAt }, { deletedAt: null });
   }
 
   await post.populate(postPopulate);
@@ -248,7 +286,7 @@ export const setPostReaction = async (req: Request, res: Response) => {
   }
 
   const post = await getPostById(req.params.id);
-  const type = readReactionType(req.body?.type);
+  const type = readReactionType(req.body?.type ?? "like");
   const reaction = post.reactions.find((item) => item.user.toString() === req.user?._id.toString());
 
   if (reaction) {

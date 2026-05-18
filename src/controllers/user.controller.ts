@@ -148,7 +148,7 @@ export const getUser = async (req: Request, res: Response) => {
   const includeDeleted = req.user?.role === "admin";
   const user = await getUserById(req.params.id, includeDeleted);
   const postsCount = await Post.countDocuments({ user: user._id, deletedAt: null });
-  const commentsCount = await Comment.countDocuments({ user: user._id, deletedAt: null });
+  const commentsCount = await Comment.countDocuments({ createdBy: user._id, deletedAt: null });
 
   res.json({
     success: true,
@@ -233,7 +233,7 @@ export const restoreUser = async (req: Request, res: Response) => {
     await Comment.updateMany(
       {
         deletedAt,
-        $or: [{ user: user._id }, { post: { $in: postIds } }]
+        $or: [{ createdBy: user._id }, { postId: { $in: postIds } }]
       },
       { deletedAt: null }
     );
