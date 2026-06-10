@@ -11,6 +11,7 @@ import {
   GraphQLString
 } from "graphql";
 import authRoutes from "./routes/auth.routes";
+import chatRoutes from "./routes/chat.routes";
 import commentRoutes from "./routes/comment.routes";
 import dashboardRoutes from "./routes/dashboard.routes";
 import feedRoutes from "./routes/feed.routes";
@@ -121,6 +122,7 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/chats", chatRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/posts", postRoutes);
 app.use("/api/comments", commentRoutes);
