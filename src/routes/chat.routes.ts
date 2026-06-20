@@ -13,6 +13,14 @@ import {
 } from "../controllers/chat.controller";
 import { asyncHandler } from "../middlewares/asyncHandler";
 import { authentication } from "../middlewares/auth.middleware";
+import { validateBody, validateParams } from "../common/pipes/validation.pipe";
+import {
+  CreateGroupChatDto,
+  CreatePrivateChatDto,
+  SendChatMessageDto,
+  SendPrivateMessageDto
+} from "../dtos/chat.dto";
+import { IdParamDto } from "../dtos/params.dto";
 
 const router = Router();
 
@@ -20,13 +28,13 @@ router.use(asyncHandler(authentication));
 
 router.get("/me", asyncHandler(getChatUserData));
 router.get("/", asyncHandler(getMyChats));
-router.post("/private", asyncHandler(createPrivateChat));
-router.post("/message", asyncHandler(sendMessage));
-router.post("/group", asyncHandler(createGroupChat));
-router.get("/group/:id", asyncHandler(getGroupChat));
-router.post("/group/:id/messages", asyncHandler(sendGroupMessage));
-router.patch("/:id/join", asyncHandler(joinRoom));
-router.get("/:id", asyncHandler(getChat));
-router.post("/:id/messages", asyncHandler(sendChatMessage));
+router.post("/private", validateBody(CreatePrivateChatDto), asyncHandler(createPrivateChat));
+router.post("/message", validateBody(SendPrivateMessageDto), asyncHandler(sendMessage));
+router.post("/group", validateBody(CreateGroupChatDto), asyncHandler(createGroupChat));
+router.get("/group/:id", validateParams(IdParamDto), asyncHandler(getGroupChat));
+router.post("/group/:id/messages", validateParams(IdParamDto), validateBody(SendChatMessageDto), asyncHandler(sendGroupMessage));
+router.patch("/:id/join", validateParams(IdParamDto), asyncHandler(joinRoom));
+router.get("/:id", validateParams(IdParamDto), asyncHandler(getChat));
+router.post("/:id/messages", validateParams(IdParamDto), validateBody(SendChatMessageDto), asyncHandler(sendChatMessage));
 
 export default router;
