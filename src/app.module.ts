@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Controller, Get, Module } from "@nestjs/common";
+import { Controller, Get, MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { env } from "./config/env";
 import { AuthModule } from "./modules/auth/auth.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -11,6 +11,9 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { FeedModule } from "./modules/feed/feed.module";
 import { GraphqlModule } from "./modules/graphql/graphql.module";
+import { LoggerMiddleware } from "./common/middleware/logger.middleware";
+import { TokenService } from "./common/services/token.service";
+import { RedisService } from "./common/services/redis.service";
 
 @Controller()
 class AppController {
@@ -45,6 +48,11 @@ class AppController {
     FeedModule,
     GraphqlModule
   ],
-  controllers: [AppController]
+  controllers: [AppController],
+  providers: [TokenService, RedisService]
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes("*");
+  }
+}

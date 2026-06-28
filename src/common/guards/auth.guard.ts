@@ -1,15 +1,30 @@
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from "@nestjs/common";
-import jwt, { JwtPayload } from "jsonwebtoken";
+import { Reflector } from "@nestjs/core";
 import { Request } from "express";
-import { env } from "../../config/env";
 import { User } from "../../models/user.model";
 import { RedisService } from "../services/redis.service";
+import { TokenService } from "../services/token.service";
+import { IS_PUBLIC_KEY } from "../decorators/public.decorator";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  constructor(private readonly redisService: RedisService) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly redisService: RedisService,
+    private readonly tokenService: TokenService
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    // Check if route is marked as @Public()
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass()
+    ]);
+
+    if (isPublic) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest<Request>();
     const authorization = request.headers.authorization;
 
@@ -23,10 +38,10 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException("Please login again");
     }
 
-    let payload: JwtPayload;
+    let payload;
 
     try {
-      payload = jwt.verify(token, env.jwtSecret) as JwtPayload;
+      payload = this.tokenService.verifyToken(token);
     } catch {
       throw new UnauthorizedException("Please login again");
     }

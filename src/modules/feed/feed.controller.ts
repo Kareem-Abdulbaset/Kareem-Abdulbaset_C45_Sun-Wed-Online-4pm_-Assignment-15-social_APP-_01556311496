@@ -1,12 +1,12 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Query } from "@nestjs/common";
 import { PostsService } from "../posts/posts.service";
-import { AuthGuard } from "../../common/guards/auth.guard";
+import { Auth } from "../../common/decorators/auth.decorator";
 
 @Controller("api/feed")
-@UseGuards(AuthGuard)
 export class FeedController {
   constructor(private readonly postsService: PostsService) {}
 
+  @Auth()
   @Get()
   async getNewsFeed(@Query() query: any) {
     return this.postsService.getNewsFeed(query);

@@ -1,91 +1,87 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import { NotificationsService } from "./notifications.service";
-import { AuthGuard } from "../../common/guards/auth.guard";
-import { RolesGuard } from "../../common/guards/roles.guard";
-import { Roles } from "../../common/decorators/roles.decorator";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { Auth } from "../../common/decorators/auth.decorator";
+import { User } from "../../common/decorators/current-user.decorator";
 import { UserDocument } from "../../models/user.model";
 
 @Controller("api/notifications")
-@UseGuards(AuthGuard)
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
+  @Auth()
   @Post("fcm-token")
-  async storeFcmToken(@CurrentUser() user: UserDocument, @Body() body: any) {
+  async storeFcmToken(@User() user: UserDocument, @Body() body: any) {
     return this.notificationsService.storeFcmToken(user, body);
   }
 
+  @Auth()
   @Delete("fcm-token")
-  async removeFcmToken(@CurrentUser() user: UserDocument, @Body() body: any) {
+  async removeFcmToken(@User() user: UserDocument, @Body() body: any) {
     return this.notificationsService.removeFcmToken(user, body);
   }
 
+  @Auth()
   @Post("test")
-  async sendNotificationToMe(@CurrentUser() user: UserDocument, @Body() body: any) {
+  async sendNotificationToMe(@User() user: UserDocument, @Body() body: any) {
     return this.notificationsService.sendNotificationToMe(user, body);
   }
 
+  @Auth()
   @Get("me")
-  async getMyNotifications(@CurrentUser() user: UserDocument, @Query() query: any) {
+  async getMyNotifications(@User() user: UserDocument, @Query() query: any) {
     return this.notificationsService.getMyNotifications(user._id, query);
   }
 
+  @Auth("admin")
   @Post()
-  @UseGuards(RolesGuard)
-  @Roles("admin")
-  async createNotification(@CurrentUser() user: UserDocument, @Body() body: any) {
+  async createNotification(@User() user: UserDocument, @Body() body: any) {
     return this.notificationsService.createNotification(user._id, body);
   }
 
+  @Auth("admin")
   @Get()
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async getAllNotifications(@Query() query: any) {
     return this.notificationsService.getAllNotifications(query);
   }
 
+  @Auth()
   @Get(":id")
-  async getNotification(@Param("id") id: string, @CurrentUser() user: UserDocument) {
+  async getNotification(@Param("id") id: string, @User() user: UserDocument) {
     return this.notificationsService.getNotification(id, user);
   }
 
+  @Auth()
   @Patch(":id/read")
-  async markNotificationAsRead(@Param("id") id: string, @CurrentUser() user: UserDocument) {
+  async markNotificationAsRead(@Param("id") id: string, @User() user: UserDocument) {
     return this.notificationsService.markNotificationAsRead(id, user);
   }
 
+  @Auth("admin")
   @Patch(":id")
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async updateNotification(@Param("id") id: string, @Body() body: any) {
     return this.notificationsService.updateNotification(id, body);
   }
 
+  @Auth("admin")
   @Delete(":id")
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async softDeleteNotification(@Param("id") id: string) {
     return this.notificationsService.softDeleteNotification(id);
   }
 
+  @Auth("admin")
   @Patch(":id/restore")
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async restoreNotification(@Param("id") id: string) {
     return this.notificationsService.restoreNotification(id);
   }
 
+  @Auth("admin")
   @Delete(":id/hard")
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async hardDeleteNotification(@Param("id") id: string) {
     return this.notificationsService.hardDeleteNotification(id);
   }
 
+  @Auth("admin")
   @Post(":id/send")
-  @UseGuards(RolesGuard)
-  @Roles("admin")
   async sendNotification(@Param("id") id: string) {
     return this.notificationsService.sendNotification(id);
   }

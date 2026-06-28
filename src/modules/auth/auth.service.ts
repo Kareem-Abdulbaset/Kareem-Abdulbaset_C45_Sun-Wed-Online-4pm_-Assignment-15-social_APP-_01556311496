@@ -1,15 +1,14 @@
 import { Injectable } from "@nestjs/common";
 import bcrypt from "bcryptjs";
 import { OAuth2Client, type TokenPayload } from "google-auth-library";
-import jwt, { JwtPayload } from "jsonwebtoken";
 import { User } from "../../models/user.model";
 import { AppError } from "../../utils/AppError";
 import { generateCode } from "../../utils/code";
 import { createNumericOtp, signOtpValue, verifyOtpValue } from "../../utils/otp";
-import { createToken } from "../../utils/token";
 import { env } from "../../config/env";
 import { RedisService } from "../../common/services/redis.service";
 import { EmailService } from "../../common/services/email.service";
+import { TokenService } from "../../common/services/token.service";
 
 const googleClient = new OAuth2Client();
 const RESET_PASSWORD_SCOPE = "reset-password";
@@ -23,7 +22,8 @@ type ResetPasswordChallenge = {
 export class AuthService {
   constructor(
     private readonly redisService: RedisService,
-    private readonly emailService: EmailService
+    private readonly emailService: EmailService,
+    private readonly tokenService: TokenService
   ) {}
 
   private cleanEmail(email: string) {
@@ -278,7 +278,7 @@ export class AuthService {
       throw new AppError("Please confirm your email", 403);
     }
 
-    const token = createToken(user._id.toString());
+    const token = this.tokenService.createToken(user._id.toString());
 
     return {
       success: true,
@@ -309,7 +309,7 @@ export class AuthService {
     }
 
     const user = await this.findOrCreateGoogleUser(payload);
-    const token = createToken(user._id.toString());
+    const token = this.tokenService.createToken(user._id.toString());
 
     return {
       success: true,
@@ -415,7 +415,7 @@ export class AuthService {
     user.passwordChangedAt = new Date(Date.now() - 1000);
     await user.save();
 
-    const token = createToken(user._id.toString());
+    const token = this.tokenService.createToken(user._id.toString());
 
     return {
       success: true,
@@ -429,12 +429,7 @@ export class AuthService {
       throw new AppError("Token is required", 401);
     }
 
-    const decoded = jwt.decode(token) as JwtPayload | null;
-    let seconds = env.jwtBlacklistSeconds;
-
-    if (decoded?.exp) {
-      seconds = Math.max(decoded.exp - Math.floor(Date.now() / 1000), 1);
-    }
+    const seconds = this.tokenService.getTokenExpirySeconds(token);
 
     await this.redisService.addTokenToBlacklist(token, seconds);
 
